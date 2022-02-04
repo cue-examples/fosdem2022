@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: quoteserver
+  labels:
+    app: quoteserver
+spec:
+  selector:
+    app: quoteserver
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quoteserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quoteserver
+  template:
+    metadata:
+      labels:
+        app: quoteserver
+    spec:
+      containers:
+      - name: application
+        image: k3d-registry.acme.com:5000/fosdem2022/quoteserver
+        imagePullPolicy: Always
+        args: ["-port", "3000"]
+        ports:
+          - containerPort: 3000
+        livenessProbe:
+          httpGet:
+            path: /debug/health
+            port: 8080
+          initialDelaySeconds: 40
+          periodSeconds: 3

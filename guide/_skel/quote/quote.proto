@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option go_package = "acme.com/x/quote";
+
+package quote;
+
+enum Language {
+  EN = 0;
+  NL = 1;
+}
+
+service Quoter {
+  rpc Quote(QuoteRequest) returns (QuoteResponse) {}
+}
+
+message QuoteRequest {
+  Language lang = 1;
+  int32 num = 2;
+}
+
+message QuoteResponse { repeated string quotes = 1; }

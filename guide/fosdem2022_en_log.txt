@@ -1,0 +1,512 @@
+$ cue version
+cue version v0.4.2 linux/arm64
+$ go version
+go version go1.17.6 linux/arm64
+$ cd /workdir
+$ export LOG_COLORS=false
+$ export LOG_LEVEL=warn
+$ k3d cluster delete acme.com >/dev/null 2>&1 || true
+$ k3d registry delete registry.acme.com >/dev/null 2>&1 || true
+$ k3d registry create --no-help registry.acme.com --port 5000
+$ k3d cluster create acme.com --registry-use k3d-registry.acme.com:5000
+kubectl cluster-info
+$ export KUBECONFIG="$(k3d kubeconfig write acme.com)"
+$ docker buildx build --quiet --push -t localhost:5000/fosdem2022/funquoter -f funquoter/Dockerfile .
+sha256:bba8c540db5466f7a2bc1b6231cf23a59ea9cb89caf979f9aec3e56f93fafc21
+$ docker buildx build --quiet --push -t localhost:5000/fosdem2022/quoteserver -f quoteserver/Dockerfile .
+sha256:c7b6b5f2a433f5f869a8457bd547b7fa3e79442bb0b3049c6715dec8ad65608f
+$ kubectl delete -f quoteserver/kube.yaml || true
+Error from server (NotFound): error when deleting "quoteserver/kube.yaml": services "quoteserver" not found
+Error from server (NotFound): error when deleting "quoteserver/kube.yaml": deployments.apps "quoteserver" not found
+$ kubectl delete -f funquoter/kube.yaml || true
+Error from server (NotFound): error when deleting "funquoter/kube.yaml": services "funquoter" not found
+Error from server (NotFound): error when deleting "funquoter/kube.yaml": deployments.apps "funquoter" not found
+$ kubectl apply -f quoteserver/kube.yaml
+service/quoteserver created
+deployment.apps/quoteserver created
+$ kubectl apply -f funquoter/kube.yaml
+service/funquoter created
+deployment.apps/funquoter created
+$ while true; do kubectl logs -l app=funquoter 2>&1 | grep 'Concurrency is not parallelism' && break || true; sleep 1; done
+quotes: ["Concurrency is not parallelism."]
+$ pwd
+/workdir
+$ go list -m
+acme.com/x
+$ go list ./...
+acme.com/x/funquoter
+acme.com/x/quote
+acme.com/x/quoteserver
+$ ls funquoter quoteserver
+funquoter:
+Dockerfile  kube.yaml  main.go
+
+quoteserver:
+Dockerfile  kube.yaml  main.go
+$ kubectl get pods
+NAME                          READY   STATUS    RESTARTS   AGE
+funquoter-7c64784df6-98fvv    1/1     Running   0          41s
+quoteserver-f86b5b747-xtqhn   1/1     Running   0          41s
+$ kubectl logs -l app=funquoter
+in funquoter
+quotes: ["Concurrency is not parallelism."]
+$ cd funquoter
+$ cat <<EOD > /workdir/funquoter/schema.cue
+package kube
+
+// First part of demo: using a file directly to verify a stream of YAML objects.
+//
+//    $ cue vet kube.cue -d Object kube.yaml
+//
+// to verify a specific type:
+//
+//    $ cue vet kube.cue -d Service kube.yaml
+
+// This explains how we tell Kubernetes objects apart.
+Service: kind:    "Service"
+Deployment: kind: "Deployment"
+
+Object: Deployment | Service
+
+// Label and selector policy. These constraints fulfil two purposes:
+//
+// 1) automatically derive standard labels as a convenience to the user,
+// 2) check that the value of a namesake preexisitng label is correct.
+//
+// In general, constraints in CUE often serve the purpose of both validation and
+// generation.
+
+Service: {
+	// Note: no need to declare metadata.name here, even though it is referenced
+	// below. Types are typically enforced by mixing in complete schema
+	// definitions that are defined seperately from policy.
+	metadata: labels: app: metadata.name
+	spec: selector: app:   metadata.name
+}
+Deployment: X={
+	// X is a value alias for deployment that allows us to refer
+	// to metadata without needing to declare it.
+	spec: template: metadata: labels: app: X.metadata.name
+}
+
+// Require monitoring. Note that the top-level schema only suggests
+// monitoring is enabled as a default. This definition goes a bit further
+// in making it a strict requirement.
+//
+// Style tip: put "boilerplate path" on first line and start new lines with
+// path elements that are more meaningfull to the aspect. In this case, the
+// important part is that we are adding an annotation. The fact that these
+// live in the metadata section is less relevant for the understanding.
+Deployment: spec: template: metadata:
+	annotations: "prometheus.io/scrape": "true"
+
+// Enforce the use of the acme.com container registry
+Deployment: spec: template: spec:
+	containers: [...{
+		image: =~"""
+			^k3d-registry.acme.com:5000/
+			"""
+	}]
+
+EOD
+$ cue vet schema.cue -d Object kube.yaml
+$ kubectl apply -f kube.yaml
+service/funquoter unchanged
+deployment.apps/funquoter unchanged
+$ cd /workdir
+$ mkdir -p /workdir/infra/mon
+$ cat <<EOD > /workdir/infra/mon/mon.cue
+package mon
+
+// This aspect of Deployment defaults Prometheus scraping to true.
+// As a policy, teams are expected to set up Prometheus scraping. They can
+// disable it explicitly if needed.
+Deployment: spec: template: metadata: annotations:
+	"prometheus.io/scrape": *"true" | "false"
+
+// ACME Co's standardized app framework has a built in HTTP handler for health
+// checks. This sets this up by default. As a policy, if teams opt to use
+// a different framework, then still need to implement this handler.
+//
+// NOTE: in a real-life scenario, this would probably not be maintained by
+// the monitoring team. :)
+Deployment: spec: template: spec: containers: [...{
+	livenessProbe: {
+		httpGet: {
+			path: "/debug/health"
+			port: *8080 | int
+		}
+		initialDelaySeconds: *40 | >10
+		periodSeconds:       *3 | int
+	}
+}]
+
+EOD
+$ cue mod init acme.com/x
+$ cd funquoter
+$ cat <<EOD > /workdir/funquoter/mon.cue
+package kube
+
+import "acme.com/x/infra/mon"
+
+// mon.Deployment is the policy defined for Deployment as defined by the
+// monitoring team.
+Deployment: mon.Deployment
+
+EOD
+$ cue export :kube --out yaml -d Object kube.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: funquoter
+  labels:
+    app: funquoter
+spec:
+  selector:
+    app: funquoter
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: funquoter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: funquoter
+  template:
+    metadata:
+      labels:
+        app: funquoter
+      annotations:
+        prometheus.io/scrape: "true"
+    spec:
+      containers:
+        - name: application
+          image: k3d-registry.acme.com:5000/fosdem2022/funquoter
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /debug/health
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 3
+          args:
+            - -addr=quoteserver:80
+            - -requote=10s
+$ rm mon.cue
+$ cat <<EOD > /workdir/schema.cue
+package kube
+
+import "acme.com/x/infra/mon"
+
+// Enforce monitoring policies for all teams
+Deployment: mon.Deployment
+
+EOD
+$ cue export :kube --out yaml -d Object kube.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: funquoter
+  labels:
+    app: funquoter
+spec:
+  selector:
+    app: funquoter
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: funquoter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: funquoter
+  template:
+    metadata:
+      labels:
+        app: funquoter
+      annotations:
+        prometheus.io/scrape: "true"
+    spec:
+      containers:
+        - name: application
+          image: k3d-registry.acme.com:5000/fosdem2022/funquoter
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /debug/health
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 3
+          args:
+            - -addr=quoteserver:80
+            - -requote=10s
+$ cat <<EOD > /workdir/kube_tool.cue
+package kube
+
+import (
+	"strings"
+	"encoding/yaml"
+	"encoding/json"
+
+	"tool/file"
+	"tool/cli"
+	"tool/exec"
+)
+
+// -- Global tasks
+
+// glob matches the YAML files in the current directory.
+globYAML: file.Glob & {
+	glob: "*.yaml"
+}
+
+open: {
+	for _, f in globYAML.files {
+		(f): file.Read & {
+			filename: f
+
+			contents: _
+			data:     yaml.UnmarshalStream(contents)
+		}
+	}
+}
+
+// allTasks lists all tasks run to fetch the configuration. Other tasks
+//
+allTasks: {glob: globYAML, open}
+
+// -- Linking results into schema
+
+// Put results into the object map as defined in our top-level schema.
+objByKind: {
+	for v in open for obj in v.data {
+		(strings.ToLower(obj.kind)): (obj.metadata.name): obj
+	}
+}
+
+// allObjects is a list of all Kubernetes objects declared in CUE and YAML
+// files.
+allObjects: [ for objs in objByKind for obj in objs {obj}]
+
+// -- Commands
+
+// Ensure that commands run after the global tasks.
+// TODO: flow should handle this automatically. It currently does not handle
+// the indirection of references through global definitions correctly.
+command: [string]: $after: allTasks
+
+// print prints all Kubernetes objects as a stream of marshalled JSON.
+command: print: cli.Print & {
+	text: json.MarshalStream(allObjects)
+}
+
+// apply sends the k8s objects off to kubectl.
+command: apply: exec.Run & {
+	cmd:   "kubectl apply -f -"
+	stdin: yaml.MarshalStream(allObjects)
+}
+
+EOD
+$ cat <<EOD > /workdir/schema.cue
+package kube
+
+// This schema can be used anywhere within the module to verify files using
+// the following, or similar, commands:
+//
+//    $ cue vet :kube -d Object kube.yaml
+//
+// Here, :kube tells CUE to load the kube package scoped from the current
+// directory, creating a "package instance". A package instance includes all
+// constraints defined in the package (in this case "kube") from the current
+// directory and all its ancestor directories within the same CUE module, which
+// is marked by the cue.mod directory.
+
+import (
+	"acme.com/x/infra/mon"
+)
+
+// This explains how we tell Kubernetes objects apart.
+//
+// For those already familiar with CUE, note that Service and Deployment
+// are not defined as definitions (#Service and #Deployment). This is a result
+// of how these definitions evolved. They started as constraints on YAML,
+// without any underlying schema. In other words, the schema were not known.
+// As soon as schema are mixed in (see kube_defs.cue),  however, Service and
+// Deployment will behave identically.
+//
+// A drawback of using "regular" fields for these definitions is that they will
+// be output as part of export and friends. As a matter of style, we
+// distinguish the types from data fields by starting them with an uppercase
+// letter, but export does not similarly distinguish such fields.
+//
+// In this application that is not an issue that the types are considered to
+// be data. In case it is, though, there are several alternatives:
+// 1) move the types to a separate packages, allowing to refer to them as,
+//    for instance, types.Service and types.Deployment. This looks neat, but
+//    makes it harder to use hierarchical constraints.
+// 2) use hidden fields: _Service and _Deployment. Like definitions, hidden
+//    fields are excluded from exports.
+// 3) we could support a @export(ignore) attribute to exclude fields.
+//    We would love to hear from you if you are interested in this feature.
+Service: kind:    "Service"
+Deployment: kind: "Deployment"
+
+Object: Deployment | Service
+
+// We define a standard place for all our Kubernetes objects to live,
+// collated by kind.
+objByKind: service: [string]:    Service
+objByKind: deployment: [string]: Deployment
+
+// Style tip: rather than grouping constraints per Kubernetes object type, we
+// group constraints by topic. This makes it easier to see the relationship
+// between constraints and also makes it much easier to move constraints around
+// later.
+//
+// A special case of this is defining default values. As a general guideline,
+// default values should not be defined within schema, but rather as a seperate
+// aspect that then may or may not be mixed in unconditionally by a user.
+
+// Our monitoring specialists have defined these to help ensure that
+// our services get monitored properly.
+Deployment: mon.Deployment
+
+// Label and selector policy for Kubernetes objects: this section defines a set of
+// standardized labels for service. This standard was adopted from our friendly
+// folks of the Frontend team.
+//
+// Style tip: to make it clearer that two declarations belong together one could
+// us an embedding to group them. Alternatively, one can have the convention of
+// not using an extra newline between definitions. The embedding approach,
+// though, has the advantage that comments will be grouped logically in the
+// parse tree. This may matter for automation.
+{
+	Service: {
+		metadata: labels: app: metadata.name
+		spec: selector: app:   metadata.name
+	}
+
+	Deployment: X={
+		// We can refer to a section (here metadata) without having it declared
+		// by adding an alias to the enclosing value. As a general rule one
+		// should use a value alias (a: X=b) as opposed to a field alias (X=a:
+		// b) to the most-inner scope of the section one wishes to refer to.
+		spec: template: metadata: labels: app: X.metadata.name
+	}
+}
+
+// This Service aspect defines a set of preferred values for ports.
+// Teams can omit standard values in their configuration, causing any
+// non-default values to stand out.
+Service: spec: ports: [...{
+	port:       *8080 | int
+	targetPort: *port | int
+	protocol:   *"TCP" | "UDP"
+}]
+
+EOD
+$ cue cmd print
+{"apiVersion":"v1","kind":"Service","metadata":{"name":"funquoter","labels":{"app":"funquoter"}},"spec":{"selector":{"app":"funquoter"},"ports":[{"protocol":"TCP","port":80,"targetPort":3000}]}}
+{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"funquoter"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"funquoter"}},"template":{"metadata":{"labels":{"app":"funquoter"},"annotations":{"prometheus.io/scrape":"true"}},"spec":{"containers":[{"name":"application","image":"k3d-registry.acme.com:5000/fosdem2022/funquoter","imagePullPolicy":"Always","livenessProbe":{"httpGet":{"path":"/debug/health","port":8080},"initialDelaySeconds":40,"periodSeconds":3},"args":["-addr=quoteserver:80","-requote=10s"]}]}}}}
+
+$ cue cmd apply
+service/funquoter unchanged
+deployment.apps/funquoter configured
+$ cat <<EOD > /workdir/kube_defs.cue
+package kube
+
+import (
+	"k8s.io/api/core/v1"
+	apps_v1 "k8s.io/api/apps/v1"
+)
+
+// Mix in imported schema.
+//
+// Note that even though Service and Deployment are not defined as definitions,
+// mixing in the generated definitions from k8s.io will make them behave
+// as if they were.
+
+Service:    v1.#Service
+Deployment: apps_v1.#Deployment
+
+EOD
+$ cue cmd apply
+import failed: cannot find package "k8s.io/api/apps/v1":
+    ../kube_defs.cue:5:2
+$ cat <<EOD > /workdir/cue_deps.go
+//go:build cue
+// +build cue
+
+package cue
+
+import _ "k8s.io/api/apps/v1"
+
+EOD
+$ go get k8s.io/api/apps/v1@v0.23.2
+$ cue get go k8s.io/api/apps/v1
+$ cue cmd apply
+service/funquoter unchanged
+deployment.apps/funquoter unchanged
+$ cue import -p kube -l 'objByKind:' -l 'strings.ToCamel(kind)' -l metadata.name kube.yaml
+$ cat kube.cue
+package kube
+
+objByKind: service: funquoter: {
+	apiVersion: "v1"
+	kind:       "Service"
+	metadata: {
+		name: "funquoter"
+		labels: app: "funquoter"
+	}
+	spec: {
+		selector: app: "funquoter"
+		ports: [{
+			protocol:   "TCP"
+			port:       80
+			targetPort: 3000
+		}]
+	}
+}
+objByKind: deployment: funquoter: {
+	apiVersion: "apps/v1"
+	kind:       "Deployment"
+	metadata: name: "funquoter"
+	spec: {
+		replicas: 1
+		selector: matchLabels: app: "funquoter"
+		template: {
+			metadata: labels: app: "funquoter"
+			spec: containers: [{
+				name:            "application"
+				image:           "k3d-registry.acme.com:5000/fosdem2022/funquoter"
+				imagePullPolicy: "Always"
+				args: [
+					"-addr=quoteserver:80",
+					"-requote=10s",
+				]
+			}]
+		}
+	}
+}
+$ cue trim -s
+$ cue cmd apply
+service/funquoter unchanged
+deployment.apps/funquoter unchanged
+$ rm kube.yaml
+$ cue cmd apply
+service/funquoter unchanged
+deployment.apps/funquoter unchanged
+$ k3d cluster delete acme.com >/dev/null 2>&1 || true
+$ k3d registry delete registry.acme.com >/dev/null 2>&1 || true
