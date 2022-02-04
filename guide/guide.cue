@@ -11,7 +11,7 @@ Delims: ["{{{", "}}}"]
 FilenameComment: true
 
 Defs: {
-	_ImageTag:       *":63d0feba2a691982373c966db5d4d853432d2434" | string @tag(imagetag)
+	_ImageTag:       *":45028dcedfccaaf9face327c7e0596c7138a38f6" | string @tag(imagetag)
 	ExampleName:     "fosdem2022"
 	DockerImage:     "cueexamples/\(ExampleName)"
 	DockerImageTag:  "\(DockerImage)\(_ImageTag)"
