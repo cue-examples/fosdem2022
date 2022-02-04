@@ -5,7 +5,7 @@ Terminals: [{
 	Description: "The main terminal"
 	Scenarios: {
 		fosdem2022: {
-			Image: "cueexamples/fosdem2022:63d0feba2a691982373c966db5d4d853432d2434"
+			Image: "cueexamples/fosdem2022:45028dcedfccaaf9face327c7e0596c7138a38f6"
 		}
 	}
 }]
@@ -377,14 +377,14 @@ Steps: {
 			ExitCode: 0
 			Output: """
 				NAME                          READY   STATUS    RESTARTS   AGE
-				funquoter-7c64784df6-98fvv    1/1     Running   0          41s
-				quoteserver-f86b5b747-xtqhn   1/1     Running   0          41s
+				quoteserver-f86b5b747-424lz   1/1     Running   0          32s
+				funquoter-7c64784df6-lgzbt    1/1     Running   0          32s
 
 				"""
 			ComparisonOutput: """
 				NAME                          READY   STATUS    RESTARTS   AGE
-				funquoter-7c64784df6-98fvv    1/1     Running   0          41s
-				quoteserver-f86b5b747-xtqhn   1/1     Running   0          41s
+				quoteserver-f86b5b747-424lz   1/1     Running   0          32s
+				funquoter-7c64784df6-lgzbt    1/1     Running   0          32s
 
 				"""
 		}]
@@ -1450,5 +1450,5 @@ Steps: {
 		}]
 	}
 }
-Hash: "0c717a0a6fac2e2b404a824f4c26480ca89c1cda30e6e4b14881322a4e877638"
+Hash: "3d97afd20c4e5ad7b59db4c701babfe5a8feb9667b90b88649beea7e3a4d054c"
 Delims: ["{{{", "}}}"]

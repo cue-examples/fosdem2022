@@ -1,2 +1,2 @@
 DOCKER_IMAGE="cueexamples/fosdem2022"
-DOCKER_IMAGE_TAG="cueexamples/fosdem2022:63d0feba2a691982373c966db5d4d853432d2434"
+DOCKER_IMAGE_TAG="cueexamples/fosdem2022:45028dcedfccaaf9face327c7e0596c7138a38f6"

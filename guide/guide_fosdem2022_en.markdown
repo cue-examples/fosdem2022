@@ -166,8 +166,8 @@ Confirm your system is now running:
 
 <pre><code>$ kubectl get pods
 NAME                          READY   STATUS    RESTARTS   AGE
-funquoter-7c64784df6-98fvv    1/1     Running   0          41s
-quoteserver-f86b5b747-xtqhn   1/1     Running   0          41s
+quoteserver-f86b5b747-424lz   1/1     Running   0          32s
+funquoter-7c64784df6-lgzbt    1/1     Running   0          32s
 </code></pre>
 
 To see `funquoter` in action you can watch its logs:
