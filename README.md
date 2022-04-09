@@ -1,13 +1,6 @@
 ## `cue-examples/fosdem2022`
 
-At [FOSDEM 2022](https://fosdem.org/2022/), [Marcel van
-Lohuizen](https://twitter.com/mpvl_) and [Paul
-Jolly](https://twitter.com/_myitcv) presented ["A practical guide to CUE:
-patterns for everyday
-use"](https://fosdem.org/2022/schedule/event/cue_pratical_guide/). A recording
-of the talk will soon be made available on https://video.fosdem.org/2022.
-Meanwhile, the slides are available
-[here](https://docs.google.com/presentation/d/1BycB_WevWQfzSoyGHuAIQOWQhbq4npU2aPVs14tiDa4/edit?usp=sharing).
+At [FOSDEM 2022](https://fosdem.org/2022/), [Marcel van Lohuizen](https://twitter.com/mpvl_) and [Paul Jolly](https://twitter.com/_myitcv) presented ["A practical guide to CUE: patterns for everyday use"](https://fosdem.org/2022/schedule/event/cue_pratical_guide/). A [recording of the talk](https://video.fosdem.org/2022/D.infra/cue_pratical_guide.webm) is made available and also [the slides](url).
 
 The main goal of the talk is to present a practical guide to CUE with patterns
 and techniques to help drive CUE adoption in your project or company.
